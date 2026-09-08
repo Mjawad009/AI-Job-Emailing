@@ -1,0 +1,26 @@
+{
+  "name": "outreach-mailer",
+  "version": "1.0.0",
+  "description": "Send personalized outreach emails for your company's services from Gmail, with open/click tracking and best-effort bounce detection.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "googleapis": "^140.0.1",
+    "mammoth": "^1.12.1",
+    "multer": "^2.0.1",
+    "node-fetch": "^2.7.0",
+    "nodemailer": "^10.0.0",
+    "pg": "^8.23.0",
+    "unpdf": "^1.8.1",
+    "xlsx": "^0.18.5"
+  }
+}

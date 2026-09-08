@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Settings — Outreach Mailer</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="brand">Outreach Mailer</div>
+    <nav>
+      <a href="/">Compose</a>
+      <a href="/history.html">Analytics</a>
+      <a href="/bulk.html">Bulk Send</a>
+      <a href="/sequences.html">Sequences</a>
+      <a href="/agent.html">Assistant</a>
+      <a href="/logs.html">Logs</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <h1>Settings</h1>
+  <p class="sub" id="accountLine">Everything here is editable anytime — no redeploy needed.</p>
+
+  <div class="panel">
+    <div class="section-title">Sending method</div>
+    <div class="row" style="margin-bottom:16px;">
+      <div class="field" style="margin-bottom:0;">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-size:14px;color:var(--ink);">
+          <input type="radio" name="emailProvider" value="gmail" id="providerGmail" style="width:auto;" />
+          Gmail (personal or Google Workspace)
+        </label>
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-size:14px;color:var(--ink);">
+          <input type="radio" name="emailProvider" value="smtp" id="providerSmtp" style="width:auto;" />
+          Custom SMTP (any business email provider)
+        </label>
+      </div>
+    </div>
+
+    <div id="gmailSection">
+      <div id="gmailBadgeWrap"></div>
+      <div class="actions" style="margin-top:12px;">
+        <button class="btn-primary" id="connectGmail">Connect Gmail</button>
+        <button class="btn-danger" id="disconnectGmail" style="display:none;">Disconnect</button>
+      </div>
+      <div class="hint" id="gmailHint"></div>
+      <div class="hint" style="margin-top:8px;">
+        This app requests two Gmail permissions: sending mail, and reading your inbox (used only
+        to spot delivery-failure notifications for bounce tracking). Seeing "Google hasn't
+        verified this app"? That's expected in Testing mode — click <strong>Advanced</strong>,
+        then <strong>Go to [app name] (unsafe)</strong>. Only accounts added as test users in
+        Google Cloud Console can connect at all.
+      </div>
+    </div>
+
+    <div id="smtpSection" style="display:none;">
+      <div class="row">
+        <div class="field">
+          <label for="smtpHost">SMTP host</label>
+          <input type="text" id="smtpHost" placeholder="smtp.yourprovider.com" />
+        </div>
+        <div class="field">
+          <label for="smtpPort">Port</label>
+          <input type="text" id="smtpPort" placeholder="587" />
+        </div>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-size:14px;color:var(--ink);">
+          <input type="checkbox" id="smtpSecure" style="width:auto;" />
+          Use implicit TLS (usually only for port 465 — leave unchecked for 587/25, which negotiate encryption automatically)
+        </label>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="smtpUsername">Username</label>
+          <input type="text" id="smtpUsername" placeholder="usually your full email address" />
+        </div>
+        <div class="field">
+          <label for="smtpPassword">Password</label>
+          <input type="password" id="smtpPassword" placeholder="sk-or-..." />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="smtpFromEmail">From address</label>
+          <input type="email" id="smtpFromEmail" placeholder="sales@yourcompany.com" />
+        </div>
+        <div class="field">
+          <label for="smtpFromName">From name (optional)</label>
+          <input type="text" id="smtpFromName" placeholder="Jane at Acme" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-ghost" id="testSmtpBtn" type="button">Test connection</button>
+      </div>
+      <div class="status" id="smtpStatus"></div>
+      <div class="hint">Works with any provider that offers SMTP credentials — Google Workspace, Microsoft 365, Zoho, your host's mail server, etc. Password is stored but never shown back — leave blank when saving to keep the one already on file.</div>
+    </div>
+
+    <hr class="divider" />
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-size:14px;color:var(--ink);">
+        <input type="checkbox" id="ccSelf" style="width:auto;" />
+        CC myself on every email I send
+      </label>
+    </div>
+    <div class="field" style="margin-bottom:0;">
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-size:14px;color:var(--ink);">
+        <input type="checkbox" id="trackOpens" style="width:auto;" />
+        Track opens (invisible tracking pixel)
+      </label>
+    </div>
+    <div class="field" style="margin-bottom:0;margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-size:14px;color:var(--ink);">
+        <input type="checkbox" id="trackClicks" style="width:auto;" />
+        Track link clicks
+      </label>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">Bounce detection</div>
+    <div class="hint">
+      Runs automatically every few minutes for connected accounts. This is best-effort — it
+      scans your inbox for delivery-failure emails and matches them by recipient address, since
+      Gmail has no dedicated bounce API. Some bounces may be missed or take a while to register.
+    </div>
+    <div class="actions">
+      <button class="btn-ghost" id="checkBouncesBtn" type="button">Check for bounces now</button>
+    </div>
+    <div class="status" id="bounceStatus"></div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">AI writer (OpenRouter)</div>
+    <div id="keyStatusBadge"></div>
+    <div class="field" style="margin-top:12px;">
+      <label for="openrouterApiKey">Your own OpenRouter API key (optional)</label>
+      <input type="password" id="openrouterApiKey" placeholder="sk-or-..." />
+      <div class="hint" id="orKeyHint"></div>
+    </div>
+    <div class="field">
+      <label for="openrouterModel">Model (optional override)</label>
+      <input type="text" id="openrouterModel" placeholder="Uses the platform default if left blank" />
+    </div>
+    <div class="actions">
+      <button class="btn-ghost" id="clearKeyBtn" type="button">Clear my key, use shared default</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">Your details</div>
+    <div class="row">
+      <div class="field">
+        <label for="name">Your name</label>
+        <input type="text" id="name" />
+      </div>
+      <div class="field">
+        <label for="phone">Phone</label>
+        <input type="text" id="phone" />
+      </div>
+    </div>
+    <div class="row">
+      <div class="field" style="margin-bottom:0;">
+        <label for="companyName">Your company name</label>
+        <input type="text" id="companyName" />
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">Links</div>
+    <div class="hint" style="margin-bottom:12px;">Website, pricing page, case study, calendar booking link — whatever's worth including in the signature. Add as many as you want.</div>
+    <div id="linksList"></div>
+    <div class="actions">
+      <button class="btn-ghost" id="addLinkBtn" type="button">+ Add a link</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">What we offer</div>
+    <div class="field" style="margin-bottom:0;">
+      <label for="extraInfo">About the service / pitch (not on the brochure)</label>
+      <textarea id="extraInfo" rows="6" placeholder="What we sell, who it's for, pricing notes, proof points, differentiators..."></textarea>
+      <div class="hint">The AI treats this as true and grounds the pitch in it, same as the collateral below.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">Collateral (optional)</div>
+    <div id="collateralList"></div>
+    <hr class="divider" />
+    <div class="row">
+      <div class="field">
+        <label for="collateralLabel">Label</label>
+        <input type="text" id="collateralLabel" placeholder="One-pager, Case study, Pricing sheet..." />
+      </div>
+      <div class="field">
+        <label for="collateralFile">File (PDF or DOCX)</label>
+        <input type="file" id="collateralFile" accept=".pdf,.doc,.docx" />
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-primary" id="uploadCollateralBtn">Upload</button>
+    </div>
+    <div class="hint">Upload as many as you want. Whichever is marked default grounds the AI unless you pick a different one per email or batch. Its text always informs the pitch — attaching the actual file is a separate, per-email choice.</div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">Email format</div>
+    <div class="field">
+      <label for="subjectTemplate">Subject line</label>
+      <input type="text" id="subjectTemplate" />
+      <div class="hint">Placeholders: {{name}} {{companyName}} {{company}} {{contactName}}.</div>
+    </div>
+    <div class="field">
+      <label for="emailFormat">Format &amp; instructions for the AI</label>
+      <textarea id="emailFormat" rows="16"></textarea>
+      <div class="hint">
+        The AI writes the whole email following these instructions, grounded in the collateral
+        and "what we offer" text above. Use these exact tokens for factual details — they're
+        filled in afterward, never guessed: {{name}} {{companyName}} {{phone}} {{links}}
+        {{company}} {{contactName}}.
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="actions">
+      <button class="btn-primary" id="saveBtn">Save settings</button>
+    </div>
+    <div class="status" id="saveStatus"></div>
+  </div>
+</div>
+
+<script>
+function showStatus(el, msg, ok) {
+  el.textContent = msg;
+  el.classList.remove('ok', 'err');
+  el.classList.add('show', ok ? 'ok' : 'err');
+}
+
+async function loadMe() {
+  const res = await fetch('/api/me');
+  const data = await res.json();
+  if (data.email) {
+    document.getElementById('accountLine').textContent = 'Signed in as ' + data.email + '. Everything below is editable anytime.';
+  }
+}
+
+async function loadSettings() {
+  const res = await fetch('/api/settings');
+  const s = await res.json();
+
+  document.getElementById('name').value = s.name || '';
+  document.getElementById('phone').value = s.phone || '';
+  document.getElementById('companyName').value = s.companyName || '';
+  document.getElementById('openrouterModel').value = s.openrouterModel || '';
+  document.getElementById('emailFormat').value = s.emailFormat || '';
+  document.getElementById('subjectTemplate').value = s.subjectTemplate || '';
+  document.getElementById('extraInfo').value = s.extraInfo || '';
+  document.getElementById('ccSelf').checked = !!s.ccSelf;
+  document.getElementById('trackOpens').checked = !!s.trackOpens;
+  document.getElementById('trackClicks').checked = !!s.trackClicks;
+
+  document.getElementById('providerGmail').checked = s.emailProvider !== 'smtp';
+  document.getElementById('providerSmtp').checked = s.emailProvider === 'smtp';
+  toggleProviderSections();
+
+  document.getElementById('smtpHost').value = s.smtp.host || '';
+  document.getElementById('smtpPort').value = s.smtp.port || 587;
+  document.getElementById('smtpSecure').checked = !!s.smtp.secure;
+  document.getElementById('smtpUsername').value = s.smtp.username || '';
+  document.getElementById('smtpFromEmail').value = s.smtp.fromEmail || '';
+  document.getElementById('smtpFromName').value = s.smtp.fromName || '';
+  document.getElementById('smtpPassword').placeholder = s.smtp.hasPassword
+    ? '•••••••••••• (saved — leave blank to keep it)'
+    : 'App password or SMTP password';
+
+  renderLinksList(s.links || []);
+
+  const keyBadge = document.getElementById('keyStatusBadge');
+  const orKeyHint = document.getElementById('orKeyHint');
+  const keyInput = document.getElementById('openrouterApiKey');
+  if (s.usingOwnOpenrouterKey) {
+    keyBadge.innerHTML = '<span class="badge on"><span class="dot"></span>using your own key</span>';
+    orKeyHint.textContent = 'A key is saved. Left blank for security — leave blank to keep it, or type a new one to replace it.';
+    keyInput.placeholder = '•••••••••••• (saved — leave blank to keep it)';
+  } else if (s.platformKeyAvailable) {
+    keyBadge.innerHTML = '<span class="badge on"><span class="dot"></span>using the shared platform key (free, limited per day)</span>';
+    orKeyHint.textContent = 'No key saved — you\'re using the free shared key. Add your own above for unlimited use.';
+    keyInput.placeholder = 'sk-or-...';
+  } else {
+    keyBadge.innerHTML = '<span class="badge off"><span class="dot"></span>no key available — add your own to use the AI writer</span>';
+    orKeyHint.textContent = 'The shared platform key isn\'t configured. Add your own OpenRouter key to generate emails.';
+    keyInput.placeholder = 'sk-or-...';
+  }
+
+  renderCollateralList(s.collateralFiles || [], s.defaultCollateralId);
+
+  const badgeWrap = document.getElementById('gmailBadgeWrap');
+  const connectBtn = document.getElementById('connectGmail');
+  const disconnectBtn = document.getElementById('disconnectGmail');
+  const gmailHint = document.getElementById('gmailHint');
+
+  if (!s.googleConfigured) {
+    badgeWrap.innerHTML = '<span class="badge off"><span class="dot"></span>not configured</span>';
+    connectBtn.disabled = true;
+    gmailHint.textContent = 'The site operator hasn\'t set up Google sign-in yet.';
+  } else if (s.googleConnected) {
+    badgeWrap.innerHTML = '<span class="badge on"><span class="dot"></span>connected as ' + s.googleEmail + '</span>';
+    connectBtn.style.display = 'none';
+    disconnectBtn.style.display = 'inline-block';
+    gmailHint.textContent = '';
+  } else {
+    badgeWrap.innerHTML = '<span class="badge off"><span class="dot"></span>not connected</span>';
+    gmailHint.textContent = 'Click connect and sign in with the Google account you want to send from.';
+  }
+}
+
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---------- links list ----------
+function renderLinksList(links) {
+  const wrap = document.getElementById('linksList');
+  if (!links.length) {
+    wrap.innerHTML = '<div class="hint">No links added yet.</div>';
+    return;
+  }
+  wrap.innerHTML = links.map((l, i) => `
+    <div class="row" style="align-items:center;margin-bottom:10px;" data-link-index="${i}">
+      <div class="field" style="margin-bottom:0;">
+        <input type="text" class="linkLabel" value="${escapeHtml(l.label)}" placeholder="Label (e.g. Pricing)" />
+      </div>
+      <div class="field" style="margin-bottom:0;flex:2;">
+        <input type="text" class="linkUrl" value="${escapeHtml(l.url)}" placeholder="https://..." />
+      </div>
+      <button class="btn-danger removeLinkBtn" type="button" style="padding:8px 14px;">Remove</button>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('.removeLinkBtn').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('[data-link-index]').remove());
+  });
+}
+
+document.getElementById('addLinkBtn').addEventListener('click', () => {
+  const wrap = document.getElementById('linksList');
+  if (wrap.querySelector('.hint')) wrap.innerHTML = '';
+  const idx = wrap.querySelectorAll('[data-link-index]').length;
+  const div = document.createElement('div');
+  div.className = 'row';
+  div.style.cssText = 'align-items:center;margin-bottom:10px;';
+  div.dataset.linkIndex = idx;
+  div.innerHTML = `
+    <div class="field" style="margin-bottom:0;">
+      <input type="text" class="linkLabel" placeholder="Label (e.g. Pricing)" />
+    </div>
+    <div class="field" style="margin-bottom:0;flex:2;">
+      <input type="text" class="linkUrl" placeholder="https://..." />
+    </div>
+    <button class="btn-danger removeLinkBtn" type="button" style="padding:8px 14px;">Remove</button>
+  `;
+  wrap.appendChild(div);
+  div.querySelector('.removeLinkBtn').addEventListener('click', () => div.remove());
+});
+
+function collectLinks() {
+  return Array.from(document.querySelectorAll('#linksList [data-link-index]')).map(row => ({
+    label: row.querySelector('.linkLabel').value.trim(),
+    url: row.querySelector('.linkUrl').value.trim()
+  })).filter(l => l.label && l.url);
+}
+
+// ---------- collateral list ----------
+function renderCollateralList(files, defaultId) {
+  const wrap = document.getElementById('collateralList');
+  if (!files.length) {
+    wrap.innerHTML = '<div class="hint">No collateral uploaded yet.</div>';
+    return;
+  }
+  wrap.innerHTML = files.map(f => `
+    <div class="row" style="align-items:center;margin-bottom:10px;">
+      <div style="flex:2;">
+        <strong style="font-size:14px;">${escapeHtml(f.label)}</strong>
+        ${f.id === defaultId ? '<span class="badge on" style="margin-left:8px;"><span class="dot"></span>default</span>' : ''}
+      </div>
+      <div class="actions" style="margin-top:0;flex:1;justify-content:flex-end;">
+        ${f.id === defaultId ? '' : `<button class="btn-ghost setDefaultCollateralBtn" data-id="${f.id}" type="button">Set default</button>`}
+        <button class="btn-danger deleteCollateralBtn" data-id="${f.id}" type="button">Delete</button>
+      </div>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('.setDefaultCollateralBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await fetch('/api/collateral/' + btn.dataset.id + '/default', { method: 'POST' });
+      loadSettings();
+    });
+  });
+  wrap.querySelectorAll('.deleteCollateralBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this collateral doc?')) return;
+      await fetch('/api/collateral/' + btn.dataset.id, { method: 'DELETE' });
+      loadSettings();
+    });
+  });
+}
+
+function toggleProviderSections() {
+  const isSmtp = document.getElementById('providerSmtp').checked;
+  document.getElementById('gmailSection').style.display = isSmtp ? 'none' : 'block';
+  document.getElementById('smtpSection').style.display = isSmtp ? 'block' : 'none';
+}
+document.querySelectorAll('input[name="emailProvider"]').forEach(radio => {
+  radio.addEventListener('change', toggleProviderSections);
+});
+
+function collectSmtpPayload() {
+  const payload = {
+    host: document.getElementById('smtpHost').value,
+    port: document.getElementById('smtpPort').value,
+    secure: document.getElementById('smtpSecure').checked,
+    username: document.getElementById('smtpUsername').value,
+    fromEmail: document.getElementById('smtpFromEmail').value,
+    fromName: document.getElementById('smtpFromName').value
+  };
+  const password = document.getElementById('smtpPassword').value;
+  if (password) payload.password = password;
+  return payload;
+}
+
+document.getElementById('testSmtpBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('testSmtpBtn');
+  const statusEl = document.getElementById('smtpStatus');
+  btn.disabled = true;
+  btn.textContent = 'Testing…';
+  try {
+    const res = await fetch('/api/smtp/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ smtp: collectSmtpPayload() })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showStatus(statusEl, 'Connection successful.', true);
+    } else {
+      showStatus(statusEl, data.error || 'Connection failed.', false);
+    }
+  } catch (e) {
+    showStatus(statusEl, 'Connection failed.', false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Test connection';
+  }
+});
+
+document.getElementById('logoutLink').addEventListener('click', async e => {
+  e.preventDefault();
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+});
+
+document.getElementById('connectGmail').addEventListener('click', () => {
+  window.location.href = '/auth/google';
+});
+
+document.getElementById('disconnectGmail').addEventListener('click', async () => {
+  await fetch('/api/google/disconnect', { method: 'POST' });
+  loadSettings();
+});
+
+document.getElementById('checkBouncesBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('checkBouncesBtn');
+  const statusEl = document.getElementById('bounceStatus');
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  try {
+    const res = await fetch('/api/bounces/check', { method: 'POST' });
+    const data = await res.json();
+    if (data.skipped) {
+      showStatus(statusEl, data.skipped, false);
+    } else {
+      showStatus(statusEl, `Checked ${data.checked} message(s), found ${data.bounced} new bounce(s).`, true);
+    }
+  } catch (e) {
+    showStatus(statusEl, 'Check failed.', false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Check for bounces now';
+  }
+});
+
+document.getElementById('clearKeyBtn').addEventListener('click', async () => {
+  document.getElementById('openrouterApiKey').value = '';
+  await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ openrouterApiKey: '' })
+  });
+  showStatus(document.getElementById('saveStatus'), 'Cleared. You\'re back on the shared key.', true);
+  loadSettings();
+});
+
+document.getElementById('uploadCollateralBtn').addEventListener('click', async () => {
+  const fileInput = document.getElementById('collateralFile');
+  const label = document.getElementById('collateralLabel').value.trim();
+  if (!fileInput.files.length) {
+    showStatus(document.getElementById('saveStatus'), 'Choose a file first.', false);
+    return;
+  }
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  formData.append('label', label);
+  const res = await fetch('/api/collateral', { method: 'POST', body: formData });
+  const data = await res.json();
+  const statusEl = document.getElementById('saveStatus');
+  if (res.ok) {
+    showStatus(statusEl, data.textExtracted ? 'Uploaded — text extracted.' : 'Uploaded, but text couldn\'t be extracted (try PDF or DOCX).', true);
+    fileInput.value = '';
+    document.getElementById('collateralLabel').value = '';
+    loadSettings();
+  } else {
+    showStatus(statusEl, data.error || 'Upload failed', false);
+  }
+});
+
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  const payload = {
+    name: document.getElementById('name').value,
+    phone: document.getElementById('phone').value,
+    companyName: document.getElementById('companyName').value,
+    links: collectLinks(),
+    openrouterModel: document.getElementById('openrouterModel').value,
+    emailFormat: document.getElementById('emailFormat').value,
+    subjectTemplate: document.getElementById('subjectTemplate').value,
+    extraInfo: document.getElementById('extraInfo').value,
+    ccSelf: document.getElementById('ccSelf').checked,
+    trackOpens: document.getElementById('trackOpens').checked,
+    trackClicks: document.getElementById('trackClicks').checked,
+    emailProvider: document.getElementById('providerSmtp').checked ? 'smtp' : 'gmail',
+    smtp: collectSmtpPayload()
+  };
+  const key = document.getElementById('openrouterApiKey').value;
+  if (key) payload.openrouterApiKey = key;
+
+  const res = await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const statusEl = document.getElementById('saveStatus');
+  if (res.ok) {
+    showStatus(statusEl, 'Saved.', true);
+    document.getElementById('openrouterApiKey').value = '';
+    document.getElementById('smtpPassword').value = '';
+    loadSettings();
+  } else {
+    const data = await res.json();
+    showStatus(statusEl, data.error || 'Save failed', false);
+  }
+});
+
+const params = new URLSearchParams(window.location.search);
+if (params.get('connected')) {
+  showStatus(document.getElementById('saveStatus'), 'Gmail connected: ' + params.get('connected'), true);
+}
+
+loadMe();
+loadSettings();
+</script>
+</body>
+</html>

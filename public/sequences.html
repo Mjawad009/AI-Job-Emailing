@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sequences — Outreach Mailer</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="brand">Outreach Mailer</div>
+    <nav>
+      <a href="/">Compose</a>
+      <a href="/bulk.html">Bulk Send</a>
+      <a href="/history.html">Analytics</a>
+      <a href="/agent.html">Assistant</a>
+      <a href="/logs.html">Logs</a>
+      <a href="/settings.html">Settings</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <h1>Sequences</h1>
+  <p class="sub">A sequence is a set of follow-up emails sent automatically over time — send now, bump in 3 days, breakup email in 7 — until someone replies or you stop it. Runs in the background every few minutes; a bounce auto-stops it.</p>
+
+  <div class="panel">
+    <div class="section-title">Your sequences</div>
+    <div id="sequencesList"></div>
+    <div class="actions">
+      <button class="btn-primary" id="newSequenceBtn" type="button">+ New sequence</button>
+      <button class="btn-ghost" id="runNowBtn" type="button">Run due steps now</button>
+    </div>
+    <div class="status" id="runNowStatus"></div>
+  </div>
+
+  <div class="panel" id="editorPanel" style="display:none;">
+    <div class="section-title" id="editorTitle">New sequence</div>
+    <div class="field">
+      <label for="seqName">Name</label>
+      <input type="text" id="seqName" placeholder="e.g. Cold outbound — 3 touch" />
+    </div>
+    <div id="stepsList"></div>
+    <div class="actions">
+      <button class="btn-ghost" id="addStepBtn" type="button">+ Add step</button>
+    </div>
+    <hr class="divider" />
+    <div class="actions">
+      <button class="btn-primary" id="saveSeqBtn" type="button">Save sequence</button>
+      <button class="btn-ghost" id="cancelEditBtn" type="button">Cancel</button>
+    </div>
+    <div class="status" id="editorStatus"></div>
+  </div>
+
+  <div class="panel" id="enrollPanel" style="display:none;">
+    <div class="section-title">Enroll a prospect</div>
+    <div class="hint" style="margin-bottom:12px;">Enrolling schedules the first email to send on the next sweep (within a few minutes) — it isn't sent instantly like Compose.</div>
+    <div class="row">
+      <div class="field">
+        <label for="enrollTo">Their email</label>
+        <input type="email" id="enrollTo" placeholder="jane@prospect.com" />
+      </div>
+      <div class="field">
+        <label for="enrollCompany">Their company</label>
+        <input type="text" id="enrollCompany" placeholder="Prospect Inc" />
+      </div>
+    </div>
+    <div class="field">
+      <label for="enrollContactName">Their name (optional)</label>
+      <input type="text" id="enrollContactName" placeholder="Jane Smith" />
+    </div>
+    <div class="field" style="margin-bottom:0;">
+      <label for="enrollNotes">What you know about them (optional)</label>
+      <textarea id="enrollNotes" rows="4" placeholder="Recently raised a Series A, hiring for support..."></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-primary" id="enrollBtn" type="button">Enroll</button>
+      <button class="btn-ghost" id="cancelEnrollBtn" type="button">Cancel</button>
+    </div>
+    <div class="status" id="enrollStatus"></div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">Enrollments</div>
+    <div id="enrollmentsWrap"></div>
+  </div>
+</div>
+
+<script>
+let sequencesCache = [];
+let editingSequenceId = null;
+let enrollingSequenceId = null;
+
+function showStatus(el, msg, ok) {
+  el.textContent = msg;
+  el.classList.remove('ok', 'err');
+  el.classList.add('show', ok ? 'ok' : 'err');
+}
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function formatDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' · ' + new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+async function loadSequences() {
+  const res = await fetch('/api/sequences');
+  const data = await res.json();
+  sequencesCache = data.sequences;
+  const wrap = document.getElementById('sequencesList');
+
+  if (!sequencesCache.length) {
+    wrap.innerHTML = '<div class="empty-state">No sequences yet. Create one to start automating follow-ups.</div>';
+    return;
+  }
+
+  wrap.innerHTML = sequencesCache.map(s => `
+    <div class="row" style="align-items:center;margin-bottom:10px;">
+      <div style="flex:2;">
+        <strong style="font-size:14px;">${escapeHtml(s.name)}</strong>
+        <span class="hint" style="margin:0 0 0 8px;display:inline;">${s.stepCount} step${s.stepCount === 1 ? '' : 's'} · ${s.activeEnrollments} active</span>
+      </div>
+      <div class="actions" style="margin-top:0;flex:1;justify-content:flex-end;">
+        <button class="btn-ghost enrollFromListBtn" data-id="${s.id}" type="button">Enroll a prospect</button>
+        <button class="btn-ghost editSeqBtn" data-id="${s.id}" type="button">Edit</button>
+        <button class="btn-danger deleteSeqBtn" data-id="${s.id}" type="button">Delete</button>
+      </div>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('.enrollFromListBtn').forEach(btn => {
+    btn.addEventListener('click', () => openEnroll(btn.dataset.id));
+  });
+  wrap.querySelectorAll('.editSeqBtn').forEach(btn => {
+    btn.addEventListener('click', () => openEditor(btn.dataset.id));
+  });
+  wrap.querySelectorAll('.deleteSeqBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this sequence? Active enrollments in it will stop.')) return;
+      await fetch('/api/sequences/' + btn.dataset.id, { method: 'DELETE' });
+      loadSequences();
+      loadEnrollments();
+    });
+  });
+}
+
+function stepRowHtml(step) {
+  return `
+    <div class="panel" style="margin-bottom:10px;background:#fbfaf7;" data-step>
+      <div class="row">
+        <div class="field" style="max-width:140px;">
+          <label>Delay (days)</label>
+          <input type="text" class="stepDelay" value="${step.delayDays ?? 0}" />
+        </div>
+        <div class="field">
+          <label>Subject override (optional)</label>
+          <input type="text" class="stepSubject" value="${escapeHtml(step.subjectOverride || '')}" placeholder="Leave blank to use the default subject template" />
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>This step's angle (instructions for the AI)</label>
+        <textarea class="stepInstructions" rows="2" placeholder="e.g. Short, friendly bump — reference the previous email, don't repeat the full pitch">${escapeHtml(step.instructions || '')}</textarea>
+      </div>
+      <div class="actions">
+        <button class="btn-danger removeStepBtn" type="button">Remove step</button>
+      </div>
+    </div>
+  `;
+}
+
+function addStepRow(step) {
+  const wrap = document.getElementById('stepsList');
+  const div = document.createElement('div');
+  div.innerHTML = stepRowHtml(step || { delayDays: 3, instructions: '' });
+  const node = div.firstElementChild;
+  wrap.appendChild(node);
+  node.querySelector('.removeStepBtn').addEventListener('click', () => node.remove());
+}
+
+function openEditor(sequenceId) {
+  editingSequenceId = sequenceId || null;
+  document.getElementById('enrollPanel').style.display = 'none';
+  document.getElementById('editorPanel').style.display = 'block';
+  document.getElementById('editorTitle').textContent = sequenceId ? 'Edit sequence' : 'New sequence';
+  document.getElementById('stepsList').innerHTML = '';
+  document.getElementById('editorStatus').classList.remove('show');
+
+  if (sequenceId) {
+    fetch('/api/sequences/' + sequenceId).then(r => r.json()).then(data => {
+      document.getElementById('seqName').value = data.sequence.name;
+      data.sequence.steps.forEach(addStepRow);
+    });
+  } else {
+    document.getElementById('seqName').value = '';
+    addStepRow({ delayDays: 0, instructions: 'Initial outreach pitch' });
+    addStepRow({ delayDays: 3, instructions: 'Short, friendly follow-up bump' });
+    addStepRow({ delayDays: 7, instructions: 'Final breakup email — ask if now is not the right time' });
+  }
+  document.getElementById('editorPanel').scrollIntoView({ behavior: 'smooth' });
+}
+
+document.getElementById('newSequenceBtn').addEventListener('click', () => openEditor(null));
+document.getElementById('addStepBtn').addEventListener('click', () => addStepRow({ delayDays: 3, instructions: '' }));
+document.getElementById('cancelEditBtn').addEventListener('click', () => {
+  document.getElementById('editorPanel').style.display = 'none';
+});
+
+document.getElementById('saveSeqBtn').addEventListener('click', async () => {
+  const name = document.getElementById('seqName').value.trim();
+  const steps = Array.from(document.querySelectorAll('#stepsList [data-step]')).map(row => ({
+    delayDays: parseInt(row.querySelector('.stepDelay').value, 10) || 0,
+    instructions: row.querySelector('.stepInstructions').value.trim(),
+    subjectOverride: row.querySelector('.stepSubject').value.trim() || null
+  }));
+
+  const statusEl = document.getElementById('editorStatus');
+  if (!name) { showStatus(statusEl, 'Give it a name.', false); return; }
+  if (!steps.length) { showStatus(statusEl, 'Add at least one step.', false); return; }
+
+  const url = editingSequenceId ? '/api/sequences/' + editingSequenceId : '/api/sequences';
+  const method = editingSequenceId ? 'PUT' : 'POST';
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, steps })
+  });
+  const data = await res.json();
+  if (res.ok) {
+    showStatus(statusEl, 'Saved.', true);
+    document.getElementById('editorPanel').style.display = 'none';
+    loadSequences();
+  } else {
+    showStatus(statusEl, data.error || 'Save failed', false);
+  }
+});
+
+function openEnroll(sequenceId) {
+  enrollingSequenceId = sequenceId;
+  document.getElementById('editorPanel').style.display = 'none';
+  document.getElementById('enrollPanel').style.display = 'block';
+  document.getElementById('enrollTo').value = '';
+  document.getElementById('enrollCompany').value = '';
+  document.getElementById('enrollContactName').value = '';
+  document.getElementById('enrollNotes').value = '';
+  document.getElementById('enrollStatus').classList.remove('show');
+  document.getElementById('enrollPanel').scrollIntoView({ behavior: 'smooth' });
+}
+document.getElementById('cancelEnrollBtn').addEventListener('click', () => {
+  document.getElementById('enrollPanel').style.display = 'none';
+});
+
+document.getElementById('enrollBtn').addEventListener('click', async () => {
+  const to = document.getElementById('enrollTo').value.trim();
+  const company = document.getElementById('enrollCompany').value.trim();
+  const contactName = document.getElementById('enrollContactName').value.trim();
+  const notes = document.getElementById('enrollNotes').value.trim();
+  const statusEl = document.getElementById('enrollStatus');
+
+  if (!to) { showStatus(statusEl, 'Add their email address.', false); return; }
+
+  const res = await fetch('/api/sequences/' + enrollingSequenceId + '/enroll', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, company, contactName, notes })
+  });
+  const data = await res.json();
+  if (res.ok) {
+    showStatus(statusEl, 'Enrolled. First email will send on the next sweep.', true);
+    loadSequences();
+    loadEnrollments();
+  } else {
+    showStatus(statusEl, data.error || 'Enroll failed', false);
+  }
+});
+
+function statusPill(status) {
+  const map = {
+    active: '<span class="pill" style="border-color:var(--teal);color:var(--teal-dark);">active</span>',
+    completed: '<span class="pill sent">completed</span>',
+    stopped: '<span class="pill" style="border-color:var(--line);color:var(--ink-soft);">stopped</span>',
+    bounced: '<span class="pill failed">bounced</span>',
+    replied: '<span class="pill sent" style="border-color:var(--teal);color:var(--teal-dark);font-weight:600;">replied 🎉</span>',
+    error: '<span class="pill failed">error</span>'
+  };
+  return map[status] || status;
+}
+
+async function loadEnrollments() {
+  const res = await fetch('/api/sequences/enrollments');
+  const data = await res.json();
+  const wrap = document.getElementById('enrollmentsWrap');
+
+  if (!data.enrollments.length) {
+    wrap.innerHTML = '<div class="empty-state">No enrollments yet.</div>';
+    return;
+  }
+
+  const rows = data.enrollments.map(e => `
+    <tr>
+      <td>${escapeHtml(e.sequenceName)}</td>
+      <td>${escapeHtml(e.company) || '<span class="muted">—</span>'}</td>
+      <td>${escapeHtml(e.to)}</td>
+      <td>${e.currentStepOrder}/${e.totalSteps}</td>
+      <td>${statusPill(e.status)}</td>
+      <td class="muted">${e.status === 'active' ? formatDate(e.nextSendAt) : '—'}</td>
+      <td>${e.status === 'active' ? `<button class="btn-danger stopEnrollBtn" data-id="${e.id}" style="padding:4px 10px;font-size:12px;" type="button">Stop</button>` : ''}</td>
+    </tr>
+  `).join('');
+
+  wrap.innerHTML = `
+    <table class="history">
+      <thead><tr><th>Sequence</th><th>Company</th><th>Email</th><th>Step</th><th>Status</th><th>Next send</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  wrap.querySelectorAll('.stopEnrollBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await fetch('/api/sequences/enrollments/' + btn.dataset.id + '/stop', { method: 'POST' });
+      loadEnrollments();
+      loadSequences();
+    });
+  });
+}
+
+document.getElementById('runNowBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('runNowBtn');
+  const statusEl = document.getElementById('runNowStatus');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  try {
+    const res = await fetch('/api/sequences/run-now', { method: 'POST' });
+    const data = await res.json();
+    showStatus(statusEl, `Processed ${data.processed}: ${data.sent} sent, ${data.completed} completed, ${data.errored} errored.`, data.errored === 0);
+    loadEnrollments();
+    loadSequences();
+  } catch (e) {
+    showStatus(statusEl, 'Failed to run.', false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run due steps now';
+  }
+});
+
+document.getElementById('logoutLink').addEventListener('click', async e => {
+  e.preventDefault();
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+});
+
+loadSequences();
+loadEnrollments();
+</script>
+</body>
+</html>

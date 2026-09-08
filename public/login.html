@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Log in — Outreach Mailer</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="brand mono" style="text-transform:uppercase;letter-spacing:.08em;color:#0a4f44;font-size:13px;margin-bottom:18px;">Outreach Mailer</div>
+    <div class="panel">
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" autofocus autocomplete="email" />
+      </div>
+      <div class="field">
+        <label for="pw">Password</label>
+        <input type="password" id="pw" autocomplete="current-password" />
+      </div>
+      <button class="btn-primary" id="go" style="width:100%;">Log in</button>
+      <div class="status err" id="status"></div>
+    </div>
+    <p class="sub" style="text-align:center;">No account? <a href="/signup.html" style="color:var(--teal-dark);">Sign up</a></p>
+  </div>
+<script>
+async function attempt() {
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('pw').value;
+  const statusEl = document.getElementById('status');
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  const data = await res.json();
+  if (res.ok) {
+    window.location.href = '/';
+  } else {
+    statusEl.textContent = data.error || 'Login failed.';
+    statusEl.classList.add('show');
+  }
+}
+document.getElementById('go').addEventListener('click', attempt);
+document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') attempt(); });
+</script>
+</body>
+</html>

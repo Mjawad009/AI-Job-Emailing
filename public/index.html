@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Outreach Mailer</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="brand">Outreach Mailer</div>
+    <nav>
+      <a href="/history.html">Analytics</a>
+      <a href="/bulk.html">Bulk Send</a>
+      <a href="/sequences.html">Sequences</a>
+      <a href="/agent.html">Assistant</a>
+      <a href="/logs.html">Logs</a>
+      <a href="/settings.html">Settings</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <h1>Pitch a prospect</h1>
+  <p class="sub">Give it a company (and anything you know about them), it writes a personalized outreach email and sends it from your Gmail — tracked for opens and clicks.</p>
+
+  <div class="panel">
+    <details class="extract-box">
+      <summary>Paste a LinkedIn bio or note about them instead →</summary>
+      <div class="field">
+        <label for="rawPaste">Paste it here — we'll pull out the company, contact name, email if present, and useful context</label>
+        <textarea id="rawPaste" rows="6" placeholder="Paste a LinkedIn profile summary, a note about the lead, an email signature, etc."></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn-ghost" id="extractBtn" type="button">Extract</button>
+      </div>
+      <div class="status" id="extractStatus"></div>
+    </details>
+
+    <div class="row">
+      <div class="field">
+        <label for="to">Their email</label>
+        <input type="email" id="to" placeholder="jane@prospect.com" />
+      </div>
+      <div class="field">
+        <label for="company">Their company</label>
+        <input type="text" id="company" placeholder="Prospect Inc" />
+      </div>
+    </div>
+    <div class="inline-warn" id="dupWarn"></div>
+    <div class="field">
+      <label for="contactName">Their name (optional)</label>
+      <input type="text" id="contactName" placeholder="Jane Smith" />
+    </div>
+    <div class="field">
+      <label for="notes">What you know about them (optional but helps a lot)</label>
+      <textarea id="notes" rows="6" placeholder="Recently raised a Series A, hiring for a support team, mentioned scaling pains on LinkedIn..."></textarea>
+    </div>
+    <div class="row" id="collateralField" style="display:none;">
+      <div class="field" id="collateralPickerField" style="display:none;">
+        <label for="collateralId">Collateral to ground the pitch in</label>
+        <select id="collateralId"></select>
+      </div>
+      <div class="field" style="margin-bottom:0;align-self:flex-end;">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-size:14px;color:var(--ink);">
+          <input type="checkbox" id="attachCollateral" style="width:auto;" />
+          Attach the file to this email
+        </label>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-primary" id="generateBtn">Generate email</button>
+    </div>
+    <div class="status" id="genStatus"></div>
+  </div>
+
+  <div class="panel" id="previewPanel" style="display:none;">
+    <div class="section-title">Preview — edit before sending</div>
+    <div class="field">
+      <label for="subject">Subject</label>
+      <input type="text" id="subject" />
+    </div>
+    <div class="field">
+      <label for="body">Body</label>
+      <textarea id="body" rows="12"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-primary" id="sendBtn">Send from Gmail</button>
+      <button class="btn-ghost" id="regenBtn">Regenerate</button>
+    </div>
+    <div class="status" id="sendStatus"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmOverlay">
+  <div class="modal">
+    <h2>Send this email?</h2>
+    <div class="modal-row"><span class="k">To</span><span id="confirmTo"></span></div>
+    <div class="modal-row"><span class="k">Subject</span><span id="confirmSubject"></span></div>
+    <div id="confirmDupWarn" class="warn" style="display:none;"></div>
+    <div class="actions">
+      <button class="btn-primary" id="confirmSendBtn">Yes, send it</button>
+      <button class="btn-ghost" id="confirmCancelBtn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const genBtn = document.getElementById('generateBtn');
+const sendBtn = document.getElementById('sendBtn');
+const regenBtn = document.getElementById('regenBtn');
+const previewPanel = document.getElementById('previewPanel');
+const genStatus = document.getElementById('genStatus');
+const sendStatus = document.getElementById('sendStatus');
+const dupWarn = document.getElementById('dupWarn');
+const toInput = document.getElementById('to');
+
+function showStatus(el, msg, ok) {
+  el.textContent = msg;
+  el.classList.remove('ok', 'err');
+  el.classList.add('show', ok ? 'ok' : 'err');
+}
+
+// ---------- collateral picker ----------
+async function loadCollateralOption() {
+  const res = await fetch('/api/settings');
+  const s = await res.json();
+  const files = s.collateralFiles || [];
+  if (!files.length) return;
+
+  document.getElementById('collateralField').style.display = 'flex';
+  const pickerField = document.getElementById('collateralPickerField');
+  const select = document.getElementById('collateralId');
+
+  if (files.length > 1) {
+    pickerField.style.display = 'block';
+    select.innerHTML = files.map(f =>
+      `<option value="${f.id}" ${f.id === s.defaultCollateralId ? 'selected' : ''}>${f.label}${f.id === s.defaultCollateralId ? ' (default)' : ''}</option>`
+    ).join('');
+  } else {
+    select.innerHTML = `<option value="${files[0].id}" selected>${files[0].label}</option>`;
+  }
+}
+loadCollateralOption();
+
+// ---------- extract ----------
+document.getElementById('extractBtn').addEventListener('click', async () => {
+  const pasted = document.getElementById('rawPaste').value.trim();
+  const extractBtn = document.getElementById('extractBtn');
+  const extractStatus = document.getElementById('extractStatus');
+  if (!pasted) return;
+
+  extractBtn.disabled = true;
+  extractBtn.textContent = 'Extracting…';
+  extractStatus.classList.remove('show');
+
+  try {
+    const res = await fetch('/api/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pasted })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Extraction failed');
+
+    if (data.to) toInput.value = data.to;
+    if (data.company) document.getElementById('company').value = data.company;
+    if (data.contactName) document.getElementById('contactName').value = data.contactName;
+    if (data.notes) document.getElementById('notes').value = data.notes;
+
+    document.querySelector('.extract-box').removeAttribute('open');
+    checkDuplicate();
+  } catch (e) {
+    showStatus(extractStatus, e.message, false);
+  } finally {
+    extractBtn.disabled = false;
+    extractBtn.textContent = 'Extract';
+  }
+});
+
+// ---------- duplicate check ----------
+let dupTimer;
+async function checkDuplicate() {
+  const email = toInput.value.trim();
+  dupWarn.classList.remove('show');
+  if (!email || !email.includes('@')) return;
+  const res = await fetch('/api/history/check?to=' + encodeURIComponent(email));
+  const data = await res.json();
+  if (data.priorSends && data.priorSends.length) {
+    const last = data.priorSends[0];
+    const date = new Date(last.date).toLocaleDateString();
+    dupWarn.textContent = `You already emailed ${email} on ${date}${data.priorSends.length > 1 ? ' (and ' + (data.priorSends.length - 1) + ' more time(s))' : ''}.`;
+    dupWarn.classList.add('show');
+  }
+}
+toInput.addEventListener('input', () => {
+  clearTimeout(dupTimer);
+  dupTimer = setTimeout(checkDuplicate, 400);
+});
+
+// ---------- generate ----------
+async function generate() {
+  const company = document.getElementById('company').value.trim();
+  const contactName = document.getElementById('contactName').value.trim();
+  const notes = document.getElementById('notes').value.trim();
+
+  if (!company) {
+    showStatus(genStatus, 'Add their company name first.', false);
+    return;
+  }
+
+  genBtn.disabled = true;
+  genBtn.textContent = 'Generating…';
+  genStatus.classList.remove('show');
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company, contactName, notes, collateralId: document.getElementById('collateralId').value || '' })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to generate');
+
+    document.getElementById('subject').value = data.subject;
+    document.getElementById('body').value = data.body;
+    previewPanel.style.display = 'block';
+    previewPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    showStatus(genStatus, e.message, false);
+  } finally {
+    genBtn.disabled = false;
+    genBtn.textContent = 'Generate email';
+  }
+}
+
+// ---------- send (with confirm) ----------
+const overlay = document.getElementById('confirmOverlay');
+
+function openConfirm() {
+  const to = document.getElementById('to').value.trim();
+  const subject = document.getElementById('subject').value.trim();
+  if (!to) {
+    showStatus(sendStatus, 'Add their email address above.', false);
+    return;
+  }
+  document.getElementById('confirmTo').textContent = to;
+  document.getElementById('confirmSubject').textContent = subject;
+
+  const dupBox = document.getElementById('confirmDupWarn');
+  if (dupWarn.classList.contains('show')) {
+    dupBox.textContent = dupWarn.textContent + ' Send again anyway?';
+    dupBox.style.display = 'block';
+  } else {
+    dupBox.style.display = 'none';
+  }
+  overlay.classList.add('show');
+}
+function closeConfirm() { overlay.classList.remove('show'); }
+
+async function actuallySend() {
+  const to = document.getElementById('to').value.trim();
+  const company = document.getElementById('company').value.trim();
+  const contactName = document.getElementById('contactName').value.trim();
+  const subject = document.getElementById('subject').value.trim();
+  const body = document.getElementById('body').value;
+  const attachCollateral = document.getElementById('attachCollateral').checked;
+  const collateralId = document.getElementById('collateralId').value || '';
+
+  closeConfirm();
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Sending…';
+  sendStatus.classList.remove('show');
+
+  try {
+    const res = await fetch('/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, company, contactName, subject, body, attachCollateral, collateralId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to send');
+    showStatus(sendStatus, 'Sent to ' + to + '.', true);
+  } catch (e) {
+    showStatus(sendStatus, e.message, false);
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send from Gmail';
+  }
+}
+
+genBtn.addEventListener('click', generate);
+regenBtn.addEventListener('click', generate);
+sendBtn.addEventListener('click', openConfirm);
+document.getElementById('confirmSendBtn').addEventListener('click', actuallySend);
+document.getElementById('confirmCancelBtn').addEventListener('click', closeConfirm);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeConfirm(); });
+
+document.getElementById('logoutLink').addEventListener('click', async e => {
+  e.preventDefault();
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+});
+</script>
+</body>
+</html>

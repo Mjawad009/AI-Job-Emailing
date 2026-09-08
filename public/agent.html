@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Assistant — Outreach Mailer</title>
+<link rel="stylesheet" href="/style.css" />
+<style>
+  .chatWrap {
+    display: flex;
+    flex-direction: column;
+    height: 60vh;
+    min-height: 360px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    overflow: hidden;
+  }
+  .chatMessages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .msg {
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--teal);
+    color: #fff;
+  }
+  .msg.assistant {
+    align-self: flex-start;
+    background: #f3f2ee;
+    color: var(--ink);
+  }
+  .msg.system {
+    align-self: center;
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    font-family: ui-monospace, monospace;
+  }
+  .chatInputRow {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .chatInputRow textarea {
+    flex: 1;
+    resize: none;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+  }
+  .draftCard {
+    align-self: stretch;
+    max-width: 100%;
+    background: #fbfaf7;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .suggestion {
+    font-size: 12.5px;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    cursor: pointer;
+  }
+  .suggestion:hover { border-color: var(--teal); color: var(--teal-dark); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="brand">Outreach Mailer</div>
+    <nav>
+      <a href="/">Compose</a>
+      <a href="/sequences.html">Sequences</a>
+      <a href="/history.html">Analytics</a>
+      <a href="/logs.html">Logs</a>
+      <a href="/settings.html">Settings</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <h1>AI Assistant</h1>
+  <p class="sub">Tell it what you want in plain language — check your stats, set up a sequence, enroll a prospect, draft an email. It will never send an email without you clicking Send yourself.</p>
+
+  <div class="suggestions">
+    <div class="suggestion" data-msg="How am I doing this week? Give me the key numbers.">How am I doing this week?</div>
+    <div class="suggestion" data-msg="Set up a 3-step follow-up sequence for cold SaaS leads: initial pitch, a bump after 3 days, and a breakup email after 7 days.">Set up a 3-step sequence</div>
+    <div class="suggestion" data-msg="Draft an email to jane@example.com at Example Corp — they just raised a Series A and are hiring for support.">Draft an email</div>
+    <div class="suggestion" data-msg="Check my inbox for any new replies or bounces.">Check for replies/bounces</div>
+  </div>
+
+  <div class="chatWrap">
+    <div class="chatMessages" id="chatMessages">
+      <div class="msg system">Ask me anything about your outreach — I can check analytics, manage sequences, and draft emails.</div>
+    </div>
+    <div class="chatInputRow">
+      <textarea id="chatInput" rows="2" placeholder="Type a message..."></textarea>
+      <button class="btn-primary" id="sendChatBtn" type="button">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let conversation = [];
+
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function appendMessage(role, text) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + role;
+  el.textContent = text;
+  document.getElementById('chatMessages').appendChild(el);
+  scrollToBottom();
+  return el;
+}
+
+function scrollToBottom() {
+  const wrap = document.getElementById('chatMessages');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function appendDraftCard(draft) {
+  const wrap = document.getElementById('chatMessages');
+  const card = document.createElement('div');
+  card.className = 'draftCard';
+  card.innerHTML = `
+    <div class="section-title" style="margin-bottom:10px;">Draft — review before sending</div>
+    <div class="field">
+      <label>To</label>
+      <input type="email" class="draftTo" value="${escapeHtml(draft.to || '')}" />
+    </div>
+    <div class="field">
+      <label>Subject</label>
+      <input type="text" class="draftSubject" value="${draft.subject.replace(/"/g, '&quot;')}" />
+    </div>
+    <div class="field" style="margin-bottom:0;">
+      <label>Body</label>
+      <textarea class="draftBody" rows="8">${escapeHtml(draft.body)}</textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-primary sendDraftBtn" type="button">Send this</button>
+      <button class="btn-ghost discardDraftBtn" type="button">Discard</button>
+    </div>
+    <div class="status" style="margin-top:8px;"></div>
+  `;
+  wrap.appendChild(card);
+  scrollToBottom();
+
+  const statusEl = card.querySelector('.status');
+  function showStatus(msg, ok) {
+    statusEl.textContent = msg;
+    statusEl.classList.remove('ok', 'err');
+    statusEl.classList.add('show', ok ? 'ok' : 'err');
+  }
+
+  card.querySelector('.discardDraftBtn').addEventListener('click', () => card.remove());
+  card.querySelector('.sendDraftBtn').addEventListener('click', async () => {
+    const to = card.querySelector('.draftTo').value.trim();
+    const subject = card.querySelector('.draftSubject').value.trim();
+    const body = card.querySelector('.draftBody').value;
+    if (!to) { showStatus('Add a recipient email.', false); return; }
+
+    const btn = card.querySelector('.sendDraftBtn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    try {
+      const res = await fetch('/api/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, company: draft.company, contactName: draft.contactName, subject, body })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send');
+      showStatus('Sent to ' + to + '.', true);
+      btn.style.display = 'none';
+      card.querySelector('.discardDraftBtn').textContent = 'Close';
+    } catch (e) {
+      showStatus(e.message, false);
+      btn.disabled = false;
+      btn.textContent = 'Send this';
+    }
+  });
+}
+
+async function sendChat(message) {
+  if (!message.trim()) return;
+  appendMessage('user', message);
+  document.getElementById('chatInput').value = '';
+
+  const sendBtn = document.getElementById('sendChatBtn');
+  sendBtn.disabled = true;
+  const thinkingEl = appendMessage('system', 'Thinking…');
+
+  try {
+    const res = await fetch('/api/agent/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, conversation })
+    });
+    const data = await res.json();
+    thinkingEl.remove();
+
+    if (!res.ok) {
+      appendMessage('system', 'Error: ' + (data.error || 'Something went wrong.'));
+      return;
+    }
+
+    conversation = data.messages;
+    if (data.reply) appendMessage('assistant', data.reply);
+    if (data.pendingAction && data.pendingAction.type === 'send_email') {
+      appendDraftCard(data.pendingAction.draft);
+    }
+  } catch (e) {
+    thinkingEl.remove();
+    appendMessage('system', 'Error: could not reach the assistant.');
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+document.getElementById('sendChatBtn').addEventListener('click', () => sendChat(document.getElementById('chatInput').value));
+document.getElementById('chatInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat(document.getElementById('chatInput').value);
+  }
+});
+document.querySelectorAll('.suggestion').forEach(el => {
+  el.addEventListener('click', () => sendChat(el.dataset.msg));
+});
+
+document.getElementById('logoutLink').addEventListener('click', async e => {
+  e.preventDefault();
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bulk Send — Outreach Mailer</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="brand">Outreach Mailer</div>
+    <nav>
+      <a href="/">Compose</a>
+      <a href="/history.html">Analytics</a>
+      <a href="/sequences.html">Sequences</a>
+      <a href="/agent.html">Assistant</a>
+      <a href="/logs.html">Logs</a>
+      <a href="/settings.html">Settings</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <h1>Bulk send</h1>
+  <p class="sub">Upload a CSV or Excel file with one row per prospect. It generates a personalized pitch for each, then you review and send.</p>
+
+  <div class="panel" id="uploadPanel">
+    <div class="field">
+      <label for="fileInput">CSV or Excel file (max 50 rows)</label>
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" />
+      <div class="hint">
+        Columns it looks for (any order, case-insensitive): <strong>email</strong>,
+        <strong>company</strong>, <strong>name</strong>, <strong>notes</strong>. Or paste a
+        LinkedIn bio / note per row in a single <strong>content</strong> column — the AI
+        pulls out the rest.
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="batchLabel">Batch label (optional, for grouping in Analytics)</label>
+        <input type="text" id="batchLabel" placeholder="e.g. Q1 outbound — SaaS founders" />
+      </div>
+      <div class="field" id="collateralPickerField" style="display:none;">
+        <label for="collateralId">Collateral for this batch</label>
+        <select id="collateralId"></select>
+      </div>
+    </div>
+    <div class="field" id="collateralField" style="display:none;margin-bottom:0;">
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-size:14px;color:var(--ink);">
+        <input type="checkbox" id="attachCollateral" style="width:auto;" />
+        Attach the file to all of these
+      </label>
+    </div>
+    <div class="actions">
+      <button class="btn-primary" id="uploadBtn">Upload &amp; parse</button>
+      <a class="btn-ghost" href="#" id="downloadTemplateBtn" style="text-decoration:none;display:inline-block;">Download template CSV</a>
+    </div>
+    <div class="status" id="uploadStatus"></div>
+  </div>
+
+  <div class="panel" id="reviewPanel" style="display:none;">
+    <div class="section-title">Review rows</div>
+    <div class="hint" id="reviewHint" style="margin-bottom:12px;"></div>
+    <div id="rowsTableWrap"></div>
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn-primary" id="generateAllBtn">Generate emails for selected</button>
+    </div>
+    <div class="status" id="generateStatus"></div>
+  </div>
+
+  <div class="panel" id="resultsPanel" style="display:none;">
+    <div class="section-title">Generated emails — review before sending</div>
+    <div id="resultsWrap"></div>
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn-primary" id="sendAllBtn">Send selected</button>
+    </div>
+    <div class="status" id="sendStatus"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmOverlay">
+  <div class="modal">
+    <h2>Send these emails?</h2>
+    <div class="modal-row"><span class="k">Count</span><span id="confirmCount"></span></div>
+    <div class="modal-row"><span class="k">Recipients</span><span id="confirmRecipients"></span></div>
+    <div class="actions">
+      <button class="btn-primary" id="confirmSendBtn">Yes, send them</button>
+      <button class="btn-ghost" id="confirmCancelBtn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let parsedRows = [];
+let generatedRows = [];
+
+function showStatus(el, msg, ok) {
+  el.textContent = msg;
+  el.classList.remove('ok', 'err');
+  el.classList.add('show', ok ? 'ok' : 'err');
+}
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function loadCollateralOption() {
+  const res = await fetch('/api/settings');
+  const s = await res.json();
+  const files = s.collateralFiles || [];
+  if (!files.length) return;
+
+  document.getElementById('collateralField').style.display = 'block';
+  const select = document.getElementById('collateralId');
+
+  if (files.length > 1) {
+    document.getElementById('collateralPickerField').style.display = 'block';
+    select.innerHTML = files.map(f =>
+      `<option value="${f.id}" ${f.id === s.defaultCollateralId ? 'selected' : ''}>${f.label}${f.id === s.defaultCollateralId ? ' (default)' : ''}</option>`
+    ).join('');
+  } else {
+    select.innerHTML = `<option value="${files[0].id}" selected>${files[0].label}</option>`;
+  }
+}
+loadCollateralOption();
+
+document.getElementById('downloadTemplateBtn').addEventListener('click', e => {
+  e.preventDefault();
+  const csv = 'email,company,name,notes\njane@prospect.com,Prospect Inc,Jane Smith,"Recently raised Series A, hiring for support"\n';
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'bulk-send-template.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('uploadBtn').addEventListener('click', async () => {
+  const fileInput = document.getElementById('fileInput');
+  const uploadStatus = document.getElementById('uploadStatus');
+  const uploadBtn = document.getElementById('uploadBtn');
+  if (!fileInput.files.length) {
+    showStatus(uploadStatus, 'Choose a file first.', false);
+    return;
+  }
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = 'Parsing…';
+  uploadStatus.classList.remove('show');
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+
+  try {
+    const res = await fetch('/api/bulk/parse', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Parsing failed.');
+    parsedRows = data.rows;
+    renderReviewTable(data);
+    document.getElementById('reviewPanel').style.display = 'block';
+    document.getElementById('reviewPanel').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) {
+    showStatus(uploadStatus, e.message, false);
+  } finally {
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = 'Upload & parse';
+  }
+});
+
+function renderReviewTable(data) {
+  const hint = document.getElementById('reviewHint');
+  let hintText = `${data.rows.length} row(s) found.`;
+  if (data.truncated) hintText += ` Only the first ${data.maxRows} were loaded (file had ${data.totalRows}).`;
+  hint.textContent = hintText;
+
+  const wrap = document.getElementById('rowsTableWrap');
+  const rowsHtml = data.rows.map(r => {
+    const checked = r.valid && !r.duplicate ? 'checked' : '';
+    const disabled = r.valid ? '' : 'disabled';
+    let statusBadge = '';
+    if (!r.valid) statusBadge = '<span class="pill failed">missing email</span>';
+    else if (r.duplicate) statusBadge = '<span class="pill" style="border-color:#e8c77a;color:#7a5b06;">already emailed</span>';
+    else statusBadge = '<span class="pill sent">ready</span>';
+
+    return `
+      <tr data-row-index="${r.rowIndex}">
+        <td><input type="checkbox" class="rowCheck" ${checked} ${disabled} /></td>
+        <td>${escapeHtml(r.company) || '<span class="muted">—</span>'}</td>
+        <td>${escapeHtml(r.contactName) || '<span class="muted">—</span>'}</td>
+        <td>${escapeHtml(r.to) || '<span class="muted">—</span>'}</td>
+        <td>${statusBadge}</td>
+      </tr>
+    `;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table class="history">
+      <thead><tr><th></th><th>Company</th><th>Name</th><th>Email</th><th>Status</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  `;
+}
+
+document.getElementById('generateAllBtn').addEventListener('click', async () => {
+  const checked = Array.from(document.querySelectorAll('.rowCheck:checked')).map(cb =>
+    parseInt(cb.closest('tr').dataset.rowIndex, 10)
+  );
+  const generateStatus = document.getElementById('generateStatus');
+  const generateAllBtn = document.getElementById('generateAllBtn');
+
+  if (!checked.length) {
+    showStatus(generateStatus, 'Select at least one row.', false);
+    return;
+  }
+
+  const rowsToGenerate = parsedRows.filter(r => checked.includes(r.rowIndex));
+  generateAllBtn.disabled = true;
+  generateAllBtn.textContent = `Generating ${rowsToGenerate.length} email(s)…`;
+  generateStatus.classList.remove('show');
+
+  try {
+    const res = await fetch('/api/bulk/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: rowsToGenerate, collateralId: document.getElementById('collateralId').value || '' })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Generation failed.');
+
+    generatedRows = data.results;
+    renderResults(data);
+    document.getElementById('resultsPanel').style.display = 'block';
+    document.getElementById('resultsPanel').scrollIntoView({ behavior: 'smooth' });
+
+    if (data.stoppedForCap) {
+      showStatus(generateStatus, 'Stopped partway — daily AI limit reached. Add your own OpenRouter key in Settings for unlimited use.', false);
+    }
+  } catch (e) {
+    showStatus(generateStatus, e.message, false);
+  } finally {
+    generateAllBtn.disabled = false;
+    generateAllBtn.textContent = 'Generate emails for selected';
+  }
+});
+
+function renderResults(data) {
+  const wrap = document.getElementById('resultsWrap');
+  wrap.innerHTML = data.results.map((r, i) => {
+    if (r.error) {
+      return `
+        <div class="panel" style="margin-bottom:10px;background:#fbeceb;">
+          <div class="modal-row"><span class="k">${escapeHtml(r.to || 'Row ' + r.rowIndex)}</span></div>
+          <div style="color:var(--error);font-size:13px;">${escapeHtml(r.error)}</div>
+        </div>
+      `;
+    }
+    return `
+      <div class="panel" style="margin-bottom:10px;" data-result-index="${i}">
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:normal;font-size:14px;">
+            <input type="checkbox" class="resultCheck" checked style="width:auto;" />
+            ${escapeHtml(r.to)} — ${escapeHtml(r.company || '')}
+          </label>
+        </div>
+        <div class="field">
+          <label>Subject</label>
+          <input type="text" class="resultSubject" value="${r.subject.replace(/"/g, '&quot;')}" />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Body</label>
+          <textarea class="resultBody" rows="8">${escapeHtml(r.body)}</textarea>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+const overlay = document.getElementById('confirmOverlay');
+
+function collectSelectedForSend() {
+  const panels = Array.from(document.querySelectorAll('#resultsWrap [data-result-index]'));
+  const items = [];
+  for (const panel of panels) {
+    const checkbox = panel.querySelector('.resultCheck');
+    if (!checkbox.checked) continue;
+    const idx = parseInt(panel.dataset.resultIndex, 10);
+    const original = generatedRows[idx];
+    items.push({
+      to: original.to,
+      company: original.company,
+      contactName: original.contactName,
+      subject: panel.querySelector('.resultSubject').value,
+      body: panel.querySelector('.resultBody').value
+    });
+  }
+  return items;
+}
+
+document.getElementById('sendAllBtn').addEventListener('click', () => {
+  const items = collectSelectedForSend();
+  const sendStatus = document.getElementById('sendStatus');
+  if (!items.length) {
+    showStatus(sendStatus, 'Select at least one email to send.', false);
+    return;
+  }
+  document.getElementById('confirmCount').textContent = items.length + ' email(s)';
+  const preview = items.slice(0, 5).map(i => i.to).join(', ');
+  document.getElementById('confirmRecipients').textContent = preview + (items.length > 5 ? `, and ${items.length - 5} more` : '');
+  overlay.classList.add('show');
+});
+document.getElementById('confirmCancelBtn').addEventListener('click', () => overlay.classList.remove('show'));
+overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('show'); });
+
+document.getElementById('confirmSendBtn').addEventListener('click', async () => {
+  overlay.classList.remove('show');
+  const items = collectSelectedForSend();
+  const attachCollateral = document.getElementById('attachCollateral').checked;
+  const batchLabel = document.getElementById('batchLabel').value.trim();
+  const sendAllBtn = document.getElementById('sendAllBtn');
+  const sendStatus = document.getElementById('sendStatus');
+
+  sendAllBtn.disabled = true;
+  sendAllBtn.textContent = `Sending…`;
+  sendStatus.classList.remove('show');
+
+  try {
+    const res = await fetch('/api/bulk/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, attachCollateral, collateralId: document.getElementById('collateralId').value || '', batchLabel })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Sending failed.');
+    showStatus(sendStatus, `Sent ${data.sentCount} of ${items.length}${data.failedCount ? `, ${data.failedCount} failed` : ''}.`, data.failedCount === 0);
+  } catch (e) {
+    showStatus(sendStatus, e.message, false);
+  } finally {
+    sendAllBtn.disabled = false;
+    sendAllBtn.textContent = 'Send selected';
+  }
+});
+
+document.getElementById('logoutLink').addEventListener('click', async e => {
+  e.preventDefault();
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+});
+</script>
+</body>
+</html>

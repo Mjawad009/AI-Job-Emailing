@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Activity Logs — Outreach Mailer</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="brand">Outreach Mailer</div>
+    <nav>
+      <a href="/">Compose</a>
+      <a href="/bulk.html">Bulk Send</a>
+      <a href="/sequences.html">Sequences</a>
+      <a href="/history.html">Analytics</a>
+      <a href="/agent.html">Assistant</a>
+      <a href="/settings.html">Settings</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <h1>Activity logs</h1>
+  <p class="sub">What's been happening in the background — sequence steps, bounce/reply checks, and anything the AI assistant has done on your behalf.</p>
+
+  <div class="panel">
+    <div class="row" style="align-items:flex-end;">
+      <div class="field" style="margin-bottom:0;">
+        <label for="categoryFilter">Category</label>
+        <select id="categoryFilter">
+          <option value="">All</option>
+          <option value="sequence">Sequences</option>
+          <option value="bounce">Bounces</option>
+          <option value="reply">Replies</option>
+          <option value="agent">AI Assistant</option>
+          <option value="system">System</option>
+        </select>
+      </div>
+      <div class="actions" style="margin-top:0;">
+        <button class="btn-ghost" id="refreshBtn" type="button">Refresh</button>
+      </div>
+    </div>
+    <div id="logsWrap" style="margin-top:16px;"></div>
+  </div>
+</div>
+
+<script>
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+}
+function levelPill(level) {
+  if (level === 'error') return '<span class="pill failed">error</span>';
+  if (level === 'warn') return '<span class="pill" style="border-color:#e8c77a;color:#7a5b06;">warn</span>';
+  return '<span class="pill" style="border-color:var(--line);color:var(--ink-soft);">info</span>';
+}
+function categoryLabel(c) {
+  const map = { sequence: 'Sequence', bounce: 'Bounce check', reply: 'Reply check', agent: 'AI Assistant', system: 'System' };
+  return map[c] || c;
+}
+
+async function loadLogs() {
+  const category = document.getElementById('categoryFilter').value;
+  const url = '/api/logs' + (category ? '?category=' + encodeURIComponent(category) : '');
+  const res = await fetch(url);
+  const data = await res.json();
+  const wrap = document.getElementById('logsWrap');
+
+  if (!data.entries.length) {
+    wrap.innerHTML = '<div class="empty-state">Nothing logged yet. Once sequences run, bounce/reply checks happen, or you use the AI Assistant, activity shows up here.</div>';
+    return;
+  }
+
+  const rows = data.entries.map(e => `
+    <tr>
+      <td class="muted" style="white-space:nowrap;">${formatDate(e.createdAt)}</td>
+      <td>${categoryLabel(e.category)}</td>
+      <td>${levelPill(e.level)}</td>
+      <td>${escapeHtml(e.message)}</td>
+    </tr>
+  `).join('');
+
+  wrap.innerHTML = `
+    <table class="history">
+      <thead><tr><th>Time</th><th>Category</th><th>Level</th><th>Message</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+document.getElementById('categoryFilter').addEventListener('change', loadLogs);
+document.getElementById('refreshBtn').addEventListener('click', loadLogs);
+
+document.getElementById('logoutLink').addEventListener('click', async e => {
+  e.preventDefault();
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+});
+
+loadLogs();
+</script>
+</body>
+</html>
